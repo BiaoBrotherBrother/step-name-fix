@@ -1,186 +1,29 @@
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <unordered_map>
+name: Build STEP Fix Tool
 
-using namespace std;
+on:
+  push:
+    branches: ["main"]
 
-// ===============================
-// 中文映射（可选扩展）
-// ===============================
-unordered_map<string, string> nameMap = {
-    {"0001_ASM", "电机支架装配体"},
-    {"SKEL", "骨架系统"},
-    {"STG6X20", "螺钉M6x20"},
-    {"FR_THIGH", "左大腿"},
-    {"FL_THIGH", "右大腿"}
-};
+jobs:
+  build:
+    runs-on: windows-latest
 
-// ===============================
-// STEP安全字符过滤（Creo / SW必须）
-// ===============================
-string sanitize(const string& s) {
-    string out;
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    for (char c : s) {
-        switch (c) {
-            case '\'':
-            case '"':
-            case '#':
-            case ';':
-            case ',':
-            case '\\':
-            case '(':
-            case ')':
-            case '\t':
-            case '\r':
-            case '\n':
-                out += '_';
-                break;
-            default:
-                out += c;
-        }
-    }
+      - name: Setup MSYS2 + GCC
+        uses: msys2/setup-msys2@v2
+        with:
+          install: mingw-w64-x86_64-gcc
 
-    return out;
-}
+      - name: Build
+        shell: msys2 {0}
+        run: |
+          g++ main.cpp -std=c++17 -O2 -o step_fix.exe
 
-// ===============================
-// SolidWorks Unicode 修复
-// ===============================
-string fixUnicode(string line) {
-
-    size_t pos;
-
-    while ((pos = line.find("\\X2\\")) != string::npos) {
-
-        size_t end = line.find("\\X0\\", pos);
-
-        if (end == string::npos) break;
-
-        // ⚠️ 不解析内容，直接安全替换
-        line.replace(pos, end - pos + 4, "零件");
-
-    }
-
-    return line;
-}
-
-// ===============================
-// 提取 STEP 名称（安全）
-// ===============================
-string extractName(const string& line) {
-
-    size_t p = line.find("'");
-
-    if (p == string::npos) return "";
-
-    size_t q = line.find("'", p + 1);
-
-    if (q == string::npos) return "";
-
-    return line.substr(p + 1, q - p - 1);
-}
-
-// ===============================
-// 替换 STEP 名称（只改字段）
-// ===============================
-string replaceName(string line, const string& newName) {
-
-    size_t p = line.find("'");
-
-    if (p == string::npos) return line;
-
-    size_t q = line.find("'", p + 1);
-
-    if (q == string::npos) return line;
-
-    line.replace(p + 1, q - p - 1, newName);
-
-    return line;
-}
-
-// ===============================
-// 核心修复逻辑（唯一功能）
-// ===============================
-string fixLine(string line) {
-
-    // ① SW Unicode修复
-    line = fixUnicode(line);
-
-    // ② 提取名称
-    string name = extractName(line);
-
-    if (!name.empty()) {
-
-        string newName = name;
-
-        // ③ 中文映射
-        if (nameMap.count(name)) {
-            newName = nameMap[name];
-        }
-
-        // ④ 安全处理
-        newName = sanitize(newName);
-
-        // ⑤ 写回STEP
-        line = replaceName(line, newName);
-    }
-
-    return line;
-}
-
-// ===============================
-// 自动输入文件识别
-// ===============================
-string findInput() {
-
-    ifstream f1("input");
-    if (f1.good()) return "input";
-
-    ifstream f2("input.step");
-    if (f2.good()) return "input.step";
-
-    ifstream f3("input.stp");
-    if (f3.good()) return "input.stp";
-
-    return "";
-}
-
-// ===============================
-int main() {
-
-    string file = findInput();
-
-    if (file.empty()) {
-        cout << "❌ 未找到 STEP 文件" << endl;
-        return 1;
-    }
-
-    ifstream in(file);
-
-    if (!in.is_open()) {
-        cout << "❌ 打开失败" << endl;
-        return 1;
-    }
-
-    ofstream out("input_fixed.step");
-
-    if (!out.is_open()) {
-        cout << "❌ 输出失败" << endl;
-        return 1;
-    }
-
-    string line;
-
-    while (getline(in, line)) {
-        out << fixLine(line) << "\n";
-    }
-
-    in.close();
-    out.close();
-
-    cout << "✅ STEP修复完成：input_fixed.step" << endl;
-
-    return 0;
-}
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: step-fix-exe
+          path: step_fix.exe
