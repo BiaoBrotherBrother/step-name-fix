@@ -1,29 +1,133 @@
-name: Build STEP Fix Tool
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <unordered_map>
 
-on:
-  push:
-    branches: [ "main" ]
+using namespace std;
 
-jobs:
-  build:
-    runs-on: windows-latest
+// =============================
+// 企业级：语义映射
+// =============================
+unordered_map<string, string> nameMap = {
+    {"0001_ASM", "电机支架"},
+    {"SKEL", "骨架"},
+    {"STG6X20", "螺钉M6x20"}
+};
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+// =============================
+// 安全字符过滤（工业标准）
+// =============================
+string sanitize(const string& s) {
 
-      - name: Setup MSYS2 + GCC
-        uses: msys2/setup-msys2@v2
-        with:
-          install: mingw-w64-x86_64-gcc
+    string out;
 
-      - name: Build (STATIC)
-        shell: msys2 {0}
-        run: |
-          g++ main.cpp -std=c++17 -O2 -static -static-libgcc -static-libstdc++ -o step_fix.exe
+    for (char c : s) {
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: step-fix-exe
-          path: step_fix.exe
+        // STEP / Creo / SW安全规则
+        if (c == '\'' || c == '"' || c == '#' ||
+            c == ';' || c == ',' || c == '\\' ||
+            c == '(' || c == ')') {
+            out += '_';
+        }
+        else if (c == '\r' || c == '\n' || c == '\t') {
+            continue;
+        }
+        else {
+            out += c;
+        }
+    }
+
+    return out;
+}
+
+// =============================
+// Unicode安全处理（SW STEP）
+// =============================
+string fixUnicode(string line) {
+
+    size_t pos;
+
+    while ((pos = line.find("\\X2\\")) != string::npos) {
+
+        size_t end = line.find("\\X0\\", pos);
+        if (end == string::npos) break;
+
+        line.replace(pos, end - pos + 4, "零件");
+    }
+
+    return line;
+}
+
+// =============================
+// 企业级核心：只做“NAME修复”
+// =============================
+string fixLine(string line) {
+
+    // ① Unicode安全
+    line = fixUnicode(line);
+
+    // ② 提取 NAME（只改语义，不动结构）
+    size_t p = line.find("'");
+
+    if (p != string::npos) {
+
+        size_t q = line.find("'", p + 1);
+
+        if (q != string::npos) {
+
+            string oldName = line.substr(p + 1, q - p - 1);
+
+            string newName = oldName;
+
+            // 语义映射
+            if (nameMap.count(oldName))
+                newName = nameMap[oldName];
+
+            // 安全处理
+            newName = sanitize(newName);
+
+            line.replace(p + 1, oldName.length(), newName);
+        }
+    }
+
+    return line;
+}
+
+// =============================
+string findInput() {
+
+    ifstream f1("input");
+    if (f1.good()) return "input";
+
+    ifstream f2("input.step");
+    if (f2.good()) return "input.step";
+
+    ifstream f3("input.stp");
+    if (f3.good()) return "input.stp";
+
+    return "";
+}
+
+// =============================
+int main() {
+
+    string file = findInput();
+
+    if (file.empty()) {
+        cout << "No STEP file found\n";
+        return 1;
+    }
+
+    ifstream in(file);
+    ofstream out("output_fixed.step");
+
+    string line;
+
+    while (getline(in, line)) {
+        out << fixLine(line) << "\n";
+    }
+
+    cout << "OK: STEP cleaned (enterprise safe mode)\n";
+
+    return 0;
+}
