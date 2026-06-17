@@ -6,21 +6,21 @@
 using namespace std;
 
 // ===============================
-// 🔥 中文映射（可扩展CSV）
+// 🧠 中文映射表（可扩展）
 // ===============================
 unordered_map<string, string> nameMap = {
     {"0001_ASM", "电机支架装配体"},
     {"SKEL", "骨架系统"},
     {"STG6X20", "螺钉M6x20"},
+    {"STG6X20-1", "螺钉M6x20-1"},
     {"FR_THIGH", "左大腿"},
     {"FL_THIGH", "右大腿"}
 };
 
 // ===============================
-// 🔥 安全字符过滤（Creo / SW兼容）
+// 🚨 STEP非法字符清理（Creo/SW安全）
 // ===============================
 string sanitize(const string& s) {
-
     string out;
 
     for (char c : s) {
@@ -42,75 +42,102 @@ string sanitize(const string& s) {
                 out += c;
         }
     }
-
     return out;
 }
 
 // ===============================
-// 🔥 SW STEP Unicode修复
+// 🚨 SolidWorks Unicode修复 (\X2\)
 // ===============================
-string fixUnicode(string line) {
+string fixSWUnicode(string line) {
 
-    size_t pos = 0;
+    size_t start = 0;
 
-    while ((pos = line.find("\\X2\\")) != string::npos) {
+    while ((start = line.find("\\X2\\")) != string::npos) {
 
-        size_t end = line.find("\\X0\\", pos);
+        size_t end = line.find("\\X0\\", start);
+
         if (end == string::npos) break;
 
-        // 👉 工业安全处理（不破坏结构）
-        line.replace(pos, end - pos + 4, "零件");
+        // 👉 提取中间内容
+        string block = line.substr(start, end - start + 4);
 
-        pos += 6;
+        // 👉 简化处理（工程安全策略）
+        line.replace(start, end - start + 4, "中文零件");
+
+        start += 6;
     }
 
     return line;
 }
 
 // ===============================
-// 🔥 名称映射
+// 🚨 提取 STEP 名称（简单安全版）
 // ===============================
-string mapName(const string& name) {
+string extractName(string line) {
 
-    auto it = nameMap.find(name);
-    if (it != nameMap.end())
-        return it->second;
+    size_t p = line.find("'");
 
-    return name;
+    if (p == string::npos) return "";
+
+    size_t q = line.find("'", p + 1);
+
+    if (q == string::npos) return "";
+
+    return line.substr(p + 1, q - p - 1);
 }
 
 // ===============================
-// 🔥 FINAL STEP修复核心
+// 🚨 替换 STEP 名称
+// ===============================
+string replaceName(string line, const string& newName) {
+
+    size_t p = line.find("'");
+
+    if (p == string::npos) return line;
+
+    size_t q = line.find("'", p + 1);
+
+    if (q == string::npos) return line;
+
+    line.replace(p + 1, q - p - 1, newName);
+
+    return line;
+}
+
+// ===============================
+// 🚀 核心修复逻辑
 // ===============================
 string fixLine(string line) {
 
-    // ① Unicode安全修复
-    line = fixUnicode(line);
+    // ① SW Unicode修复
+    line = fixSWUnicode(line);
 
-    // ② 查找 NAME（只处理第一个 'xxx'）
-    size_t p = line.find("'");
+    // ② 提取旧名字
+    string name = extractName(line);
 
-    if (p != string::npos) {
+    if (!name.empty()) {
 
-        size_t q = line.find("'", p + 1);
+        // ③ 映射中文
+        string newName = name;
 
-        if (q != string::npos) {
-
-            string oldName = line.substr(p + 1, q - p - 1);
-
-            string newName = sanitize(mapName(oldName));
-
-            line.replace(p + 1, oldName.length(), newName);
+        if (nameMap.count(name)) {
+            newName = nameMap[name];
         }
+
+        // ④ 安全字符过滤
+        newName = sanitize(newName);
+
+        // ⑤ 替换回 STEP
+        line = replaceName(line, newName);
     }
 
     return line;
 }
 
 // ===============================
-// 🔥 自动识别输入文件
+// 🚀 输入文件自动识别
 // ===============================
-string findInput() {
+string findInputFile() {
 
     ifstream f1("input");
     if (f1.good()) return "input";
@@ -125,14 +152,14 @@ string findInput() {
 }
 
 // ===============================
-// 🔥 MAIN
+// 🚀 MAIN
 // ===============================
 int main() {
 
-    string file = findInput();
+    string file = findInputFile();
 
     if (file.empty()) {
-        cout << "❌ 找不到 STEP 文件 (input / input.step / input.stp)" << endl;
+        cout << "❌ 未找到 STEP 文件 (input / input.step / input.stp)" << endl;
         return 1;
     }
 
@@ -143,7 +170,8 @@ int main() {
         return 1;
     }
 
-    ofstream out("input_fixed.step");
+    string outputFile = "input_fixed.step";
+    ofstream out(outputFile);
 
     if (!out.is_open()) {
         cout << "❌ 输出文件创建失败" << endl;
@@ -159,7 +187,7 @@ int main() {
     in.close();
     out.close();
 
-    cout << "🚀 FINAL版完成：STEP安全修复成功 → input_fixed.step" << endl;
+    cout << "🚀 完成：STEP修复成功 -> " << outputFile << endl;
 
     return 0;
 }
