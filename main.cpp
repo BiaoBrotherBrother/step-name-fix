@@ -6,99 +6,101 @@
 using namespace std;
 
 // ===============================
-// 🔥 中文映射表（你后面可以扩展CSV）
+// 🔥 中文映射（可扩展CSV）
 // ===============================
 unordered_map<string, string> nameMap = {
     {"0001_ASM", "电机支架装配体"},
     {"SKEL", "骨架系统"},
-    {"STEP_PART", "导入零件"},
-    {"STG6X20", "螺钉M6x20"}
+    {"STG6X20", "螺钉M6x20"},
+    {"FR_THIGH", "左大腿"},
+    {"FL_THIGH", "右大腿"}
 };
 
 // ===============================
-string CN(const string& s) {
-    auto it = nameMap.find(s);
-    if (it != nameMap.end()) return it->second;
-    return s;
+// 🔥 安全字符过滤（Creo / SW兼容）
+// ===============================
+string sanitize(const string& s) {
+
+    string out;
+
+    for (char c : s) {
+        switch (c) {
+            case '\'':
+            case '"':
+            case '#':
+            case ';':
+            case ',':
+            case '\\':
+            case '(':
+            case ')':
+            case '\t':
+            case '\r':
+            case '\n':
+                out += '_';
+                break;
+            default:
+                out += c;
+        }
+    }
+
+    return out;
 }
 
 // ===============================
-// 🔥 修复 STEP Unicode（稳定版，无regex炸点）
+// 🔥 SW STEP Unicode修复
 // ===============================
 string fixUnicode(string line) {
 
-    // 简化处理：直接替换 SW/STEP Unicode标记
     size_t pos = 0;
 
-    while ((pos = line.find("\\X2\\", pos)) != string::npos) {
+    while ((pos = line.find("\\X2\\")) != string::npos) {
 
         size_t end = line.find("\\X0\\", pos);
         if (end == string::npos) break;
 
-        line.replace(pos, end - pos + 4, "中文零件");
-        pos += 12;
+        // 👉 工业安全处理（不破坏结构）
+        line.replace(pos, end - pos + 4, "零件");
+
+        pos += 6;
     }
 
     return line;
 }
 
 // ===============================
-// 🔥 STEP核心修复
+// 🔥 名称映射
+// ===============================
+string mapName(const string& name) {
+
+    auto it = nameMap.find(name);
+    if (it != nameMap.end())
+        return it->second;
+
+    return name;
+}
+
+// ===============================
+// 🔥 FINAL STEP修复核心
 // ===============================
 string fixLine(string line) {
 
+    // ① Unicode安全修复
     line = fixUnicode(line);
 
-    // ==========================
-    // ① PRODUCT
-    // ==========================
-    size_t p1 = line.find("PRODUCT('");
-    if (p1 != string::npos) {
+    // ② 查找 NAME（只处理第一个 'xxx'）
+    size_t p = line.find("'");
 
-        size_t s = p1 + 9;
-        size_t e = line.find("'", s);
+    if (p != string::npos) {
 
-        if (e != string::npos) {
-            string oldName = line.substr(s, e - s);
-            string newName = CN(oldName);
+        size_t q = line.find("'", p + 1);
 
-            line.replace(s, oldName.length(), newName);
-        }
-    }
+        if (q != string::npos) {
 
-    // ==========================
-    // ② PRODUCT_DEFINITION
-    // ==========================
-    if (line.find("PRODUCT_DEFINITION") != string::npos) {
+            string oldName = line.substr(p + 1, q - p - 1);
 
-        size_t q1 = line.find("'");
-        if (q1 != string::npos) {
-            size_t q2 = line.find("'", q1 + 1);
+            string newName = sanitize(mapName(oldName));
 
-            if (q2 != string::npos) {
-                string oldName = line.substr(q1 + 1, q2 - q1 - 1);
-                string newName = CN(oldName);
-
-                line.replace(q1 + 1, oldName.length(), newName);
-            }
-        }
-    }
-
-    // ==========================
-    // ③ ASSEMBLY / INSTANCE（关键）
-    // ==========================
-    if (line.find("NEXT_ASSEMBLY_USAGE_OCCURRENCE") != string::npos) {
-
-        size_t q1 = line.find("'");
-        if (q1 != string::npos) {
-            size_t q2 = line.find("'", q1 + 1);
-
-            if (q2 != string::npos) {
-                string oldName = line.substr(q1 + 1, q2 - q1 - 1);
-                string newName = CN(oldName);
-
-                line.replace(q1 + 1, oldName.length(), newName);
-            }
+            line.replace(p + 1, oldName.length(), newName);
         }
     }
 
@@ -106,7 +108,7 @@ string fixLine(string line) {
 }
 
 // ===============================
-// 🔥 自动找输入文件
+// 🔥 自动识别输入文件
 // ===============================
 string findInput() {
 
@@ -123,22 +125,28 @@ string findInput() {
 }
 
 // ===============================
+// 🔥 MAIN
+// ===============================
 int main() {
 
     string file = findInput();
 
     if (file.empty()) {
-        cout << "❌ 找不到 input / input.step / input.stp" << endl;
-        system("pause");
+        cout << "❌ 找不到 STEP 文件 (input / input.step / input.stp)" << endl;
         return 1;
     }
 
     ifstream in(file);
+
+    if (!in.is_open()) {
+        cout << "❌ 文件打开失败" << endl;
+        return 1;
+    }
+
     ofstream out("input_fixed.step");
 
-    if (!in || !out) {
-        cout << "❌ 文件打开失败" << endl;
-        system("pause");
+    if (!out.is_open()) {
+        cout << "❌ 输出文件创建失败" << endl;
         return 1;
     }
 
@@ -151,8 +159,7 @@ int main() {
     in.close();
     out.close();
 
-    cout << "✅ STEP修复完成 -> input_fixed.step" << endl;
-    system("pause");
+    cout << "🚀 FINAL版完成：STEP安全修复成功 → input_fixed.step" << endl;
 
     return 0;
 }
