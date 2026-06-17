@@ -5,44 +5,49 @@
 
 using namespace std;
 
-// =============================
-// 企业级：语义映射
-// =============================
+// ===============================
+// 中文映射（可选扩展）
+// ===============================
 unordered_map<string, string> nameMap = {
-    {"0001_ASM", "电机支架"},
-    {"SKEL", "骨架"},
-    {"STG6X20", "螺钉M6x20"}
+    {"0001_ASM", "电机支架装配体"},
+    {"SKEL", "骨架系统"},
+    {"STG6X20", "螺钉M6x20"},
+    {"FR_THIGH", "左大腿"},
+    {"FL_THIGH", "右大腿"}
 };
 
-// =============================
-// 安全字符过滤（工业标准）
-// =============================
+// ===============================
+// STEP安全字符过滤（Creo / SW必须）
+// ===============================
 string sanitize(const string& s) {
-
     string out;
 
     for (char c : s) {
-
-        // STEP / Creo / SW安全规则
-        if (c == '\'' || c == '"' || c == '#' ||
-            c == ';' || c == ',' || c == '\\' ||
-            c == '(' || c == ')') {
-            out += '_';
-        }
-        else if (c == '\r' || c == '\n' || c == '\t') {
-            continue;
-        }
-        else {
-            out += c;
+        switch (c) {
+            case '\'':
+            case '"':
+            case '#':
+            case ';':
+            case ',':
+            case '\\':
+            case '(':
+            case ')':
+            case '\t':
+            case '\r':
+            case '\n':
+                out += '_';
+                break;
+            default:
+                out += c;
         }
     }
 
     return out;
 }
 
-// =============================
-// Unicode安全处理（SW STEP）
-// =============================
+// ===============================
+// SolidWorks Unicode 修复
+// ===============================
 string fixUnicode(string line) {
 
     size_t pos;
@@ -50,50 +55,84 @@ string fixUnicode(string line) {
     while ((pos = line.find("\\X2\\")) != string::npos) {
 
         size_t end = line.find("\\X0\\", pos);
+
         if (end == string::npos) break;
 
+        // ⚠️ 不解析内容，直接安全替换
         line.replace(pos, end - pos + 4, "零件");
+
     }
 
     return line;
 }
 
-// =============================
-// 企业级核心：只做“NAME修复”
-// =============================
-string fixLine(string line) {
+// ===============================
+// 提取 STEP 名称（安全）
+// ===============================
+string extractName(const string& line) {
 
-    // ① Unicode安全
-    line = fixUnicode(line);
-
-    // ② 提取 NAME（只改语义，不动结构）
     size_t p = line.find("'");
 
-    if (p != string::npos) {
+    if (p == string::npos) return "";
 
-        size_t q = line.find("'", p + 1);
+    size_t q = line.find("'", p + 1);
 
-        if (q != string::npos) {
+    if (q == string::npos) return "";
 
-            string oldName = line.substr(p + 1, q - p - 1);
+    return line.substr(p + 1, q - p - 1);
+}
 
-            string newName = oldName;
+// ===============================
+// 替换 STEP 名称（只改字段）
+// ===============================
+string replaceName(string line, const string& newName) {
 
-            // 语义映射
-            if (nameMap.count(oldName))
-                newName = nameMap[oldName];
+    size_t p = line.find("'");
 
-            // 安全处理
-            newName = sanitize(newName);
+    if (p == string::npos) return line;
 
-            line.replace(p + 1, oldName.length(), newName);
+    size_t q = line.find("'", p + 1);
+
+    if (q == string::npos) return line;
+
+    line.replace(p + 1, q - p - 1, newName);
+
+    return line;
+}
+
+// ===============================
+// 核心修复逻辑（唯一功能）
+// ===============================
+string fixLine(string line) {
+
+    // ① SW Unicode修复
+    line = fixUnicode(line);
+
+    // ② 提取名称
+    string name = extractName(line);
+
+    if (!name.empty()) {
+
+        string newName = name;
+
+        // ③ 中文映射
+        if (nameMap.count(name)) {
+            newName = nameMap[name];
         }
+
+        // ④ 安全处理
+        newName = sanitize(newName);
+
+        // ⑤ 写回STEP
+        line = replaceName(line, newName);
     }
 
     return line;
 }
 
-// =============================
+// ===============================
+// 自动输入文件识别
+// ===============================
 string findInput() {
 
     ifstream f1("input");
@@ -108,18 +147,29 @@ string findInput() {
     return "";
 }
 
-// =============================
+// ===============================
 int main() {
 
     string file = findInput();
 
     if (file.empty()) {
-        cout << "No STEP file found\n";
+        cout << "❌ 未找到 STEP 文件" << endl;
         return 1;
     }
 
     ifstream in(file);
-    ofstream out("output_fixed.step");
+
+    if (!in.is_open()) {
+        cout << "❌ 打开失败" << endl;
+        return 1;
+    }
+
+    ofstream out("input_fixed.step");
+
+    if (!out.is_open()) {
+        cout << "❌ 输出失败" << endl;
+        return 1;
+    }
 
     string line;
 
@@ -127,7 +177,10 @@ int main() {
         out << fixLine(line) << "\n";
     }
 
-    cout << "OK: STEP cleaned (enterprise safe mode)\n";
+    in.close();
+    out.close();
+
+    cout << "✅ STEP修复完成：input_fixed.step" << endl;
 
     return 0;
 }
