@@ -6,59 +6,53 @@
 using namespace std;
 
 // ===============================
-// 中文映射表（工程配置）
+// 中文映射（可选）
 // ===============================
-unordered_map<string, string> chineseMap = {
+unordered_map<string, string> nameMap = {
     {"ASM_001", "电机支架"},
-    {"SKEL", "骨架系统"},
-    {"BRKT", "支架"},
+    {"SKEL", "骨架"},
+    {"BRACKET", "支架"},
     {"GEARBOX", "减速器"}
 };
 
 // ===============================
-// ASCII安全转换（SW用）
+// STEP非法字符清理
 // ===============================
-string toASCII(const string& s) {
+string sanitize(string s) {
     string out;
-
     for (char c : s) {
-        if ((c >= 'a' && c <= 'z') ||
-            (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') ||
-            c == '_' || c == '-') {
-            out += c;
-        } else {
+        if (c=='\'' || c=='"' || c=='#' || c==';' || c==',' ||
+            c=='\\' || c=='(' || c==')' || c=='\t' || c=='\r' || c=='\n')
             out += '_';
-        }
+        else
+            out += c;
     }
-
     return out;
 }
 
 // ===============================
-// STEP Unicode修复（SW专用）
+// SW Unicode修复
 // ===============================
 string fixUnicode(string line) {
 
-    size_t pos;
+    size_t p;
 
-    while ((pos = line.find("\\X2\\")) != string::npos) {
+    while ((p = line.find("\\X2\\")) != string::npos) {
 
-        size_t end = line.find("\\X0\\", pos);
+        size_t q = line.find("\\X0\\", p);
 
-        if (end == string::npos) break;
+        if (q == string::npos) break;
 
-        line.replace(pos, end - pos + 4, "Part");
-
+        line.replace(p, q - p + 4, "Part");
     }
 
     return line;
 }
 
 // ===============================
-// 提取STEP名称
+// 提取 STEP 名称
 // ===============================
-string extractName(const string& line) {
+string getName(const string& line) {
 
     size_t p = line.find("'");
 
@@ -72,58 +66,49 @@ string extractName(const string& line) {
 }
 
 // ===============================
-// 替换STEP字段（核心）
+// 替换名称
 // ===============================
-string buildTripleName(const string& id) {
+string replaceName(string line, const string& newName) {
 
-    string ascii = toASCII(id);
+    size_t p = line.find("'");
 
-    string chinese = id;
+    if (p == string::npos) return line;
 
-    if (chineseMap.count(id)) {
-        chinese = chineseMap[id];
-    }
+    size_t q = line.find("'", p + 1);
 
-    return ascii + "|" + chinese;
+    if (q == string::npos) return line;
+
+    line.replace(p + 1, q - p - 1, newName);
+
+    return line;
 }
 
 // ===============================
-// 替换逻辑
+// 核心逻辑
 // ===============================
 string fixLine(string line) {
 
     line = fixUnicode(line);
 
-    string name = extractName(line);
+    string name = getName(line);
 
     if (!name.empty()) {
 
-        string ascii = toASCII(name);
-        string chinese = name;
+        string newName = name;
 
-        if (chineseMap.count(name))
-            chinese = chineseMap[name];
+        if (nameMap.count(name))
+            newName = nameMap[name];
 
-        // 安全字符
-        for (char &c : chinese) {
-            if (c == '\'' || c == '"' || c == '\\')
-                c = '_';
-        }
+        newName = sanitize(newName);
 
-        // ⚠️ 关键：写回 ASCII（保证SW）
-        size_t p = line.find("'");
-
-        if (p != string::npos) {
-            size_t q = line.find("'", p + 1);
-            if (q != string::npos) {
-                line.replace(p + 1, q - p - 1, ascii);
-            }
-        }
+        line = replaceName(line, newName);
     }
 
     return line;
 }
 
+// ===============================
+// 找输入文件
 // ===============================
 string findInput() {
 
@@ -145,7 +130,7 @@ int main() {
     string file = findInput();
 
     if (file.empty()) {
-        cout << "❌ 未找到STEP文件" << endl;
+        cout << "❌ 找不到STEP文件(input/input.step/input.stp)" << endl;
         return 1;
     }
 
@@ -158,10 +143,7 @@ int main() {
         out << fixLine(line) << "\n";
     }
 
-    in.close();
-    out.close();
-
-    cout << "✅ STEP双CAD兼容V2完成" << endl;
+    cout << "✅ 完成：input_fixed.step 已生成" << endl;
 
     return 0;
 }
