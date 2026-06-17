@@ -6,41 +6,43 @@
 using namespace std;
 
 // ===============================
-// 🔥 STEP修复核心函数
+// STEP 修复核心
 // ===============================
 string fixLine(const string& line) {
 
     string out = line;
 
-    // ===============================
-    // 🎯 1. 修复 PRODUCT 名称（核心）
-    // ===============================
+    // STEP PRODUCT 匹配
     regex productRegex("#\\d+\\s*=\\s*PRODUCT\\s*\\(\\s*'([^']*)'");
 
     smatch match;
+
     if (regex_search(line, match, productRegex)) {
 
         string oldName = match[1];
-
-        // 🔥 这里是核心：后续接 CSV 映射
         string newName = oldName;
 
-        // 示例：简单规则（你后面可以换成中文映射表）
+        // ===========================
+        // 🔥 简单映射规则（可扩展）
+        // ===========================
         if (oldName == "0001_ASM") newName = "装配体";
-        if (oldName == "SKEL") newName = "骨架";
-        if (oldName.find("STEP") != string::npos) newName = "导入模型";
+        else if (oldName == "SKEL") newName = "骨架";
+        else if (oldName.find("STEP") != string::npos) newName = "导入模型";
 
-        // 替换
-        out = regex_replace(line,
-                            regex(oldName),
-                            newName);
+        // ===========================
+        // ✔ 安全字符串替换（关键修复）
+        // ===========================
+        size_t pos = out.find(oldName);
+        if (pos != string::npos) {
+            out.replace(pos, oldName.length(), newName);
+        }
     }
 
     return out;
 }
 
 // ===============================
-// 🔥 自动找输入文件
+// 自动找输入文件
 // ===============================
 string findInputFile() {
 
@@ -64,26 +66,23 @@ int main() {
     string inputFile = findInputFile();
 
     if (inputFile.empty()) {
-        cout << "❌ 找不到STEP输入文件(input/input.step/input.stp)" << endl;
+        cout << "❌ 找不到 STEP 文件(input/input.step/input.stp)" << endl;
         system("pause");
         return 1;
     }
 
     ifstream in(inputFile);
     if (!in.is_open()) {
-        cout << "❌ 无法打开输入文件" << endl;
+        cout << "❌ 文件打开失败" << endl;
         system("pause");
         return 1;
     }
 
-    // ===============================
-    // 🔥 输出固定文件
-    // ===============================
     string outputFile = "input_fixed.step";
     ofstream out(outputFile);
 
     if (!out.is_open()) {
-        cout << "❌ 无法创建输出文件" << endl;
+        cout << "❌ 输出文件创建失败" << endl;
         system("pause");
         return 1;
     }
@@ -97,8 +96,8 @@ int main() {
     in.close();
     out.close();
 
-    cout << "✅ STEP修复完成：" << outputFile << endl;
-    system("pause");
+    cout << "✅ 完成：input_fixed.step 已生成" << endl;
 
+    system("pause");
     return 0;
 }
