@@ -1,0 +1,27 @@
+name: Build STEP Fix Tool
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup MinGW
+      run: |
+        choco install mingw -y
+
+    - name: Build with g++
+      run: |
+        g++ main.cpp -std=c++17 -O2 -o step_fix.exe
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: step-fix-exe
+        path: step_fix.exe
