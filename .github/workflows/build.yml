@@ -9,16 +9,15 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout code
+    - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Setup MinGW
-      run: |
-        choco install mingw -y
+    - name: Setup MSVC
+      uses: ilammy/msvc-dev-cmd@v1
 
-    - name: Build with g++
+    - name: Build
       run: |
-        g++ main.cpp -std=c++17 -O2 -o step_fix.exe
+        cl /EHsc /std:c++17 main.cpp /Fe:step_fix.exe
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
