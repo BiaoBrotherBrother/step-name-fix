@@ -6,74 +6,59 @@
 using namespace std;
 
 // ===============================
-// 🧠 中文映射表（可扩展）
+// 中文映射表（工程配置）
 // ===============================
-unordered_map<string, string> nameMap = {
-    {"0001_ASM", "电机支架装配体"},
+unordered_map<string, string> chineseMap = {
+    {"ASM_001", "电机支架"},
     {"SKEL", "骨架系统"},
-    {"STG6X20", "螺钉M6x20"},
-    {"STG6X20-1", "螺钉M6x20-1"},
-    {"FR_THIGH", "左大腿"},
-    {"FL_THIGH", "右大腿"}
+    {"BRKT", "支架"},
+    {"GEARBOX", "减速器"}
 };
 
 // ===============================
-// 🚨 STEP非法字符清理（Creo/SW安全）
+// ASCII安全转换（SW用）
 // ===============================
-string sanitize(const string& s) {
+string toASCII(const string& s) {
     string out;
 
     for (char c : s) {
-        switch (c) {
-            case '\'':
-            case '"':
-            case '#':
-            case ';':
-            case ',':
-            case '\\':
-            case '(':
-            case ')':
-            case '\t':
-            case '\r':
-            case '\n':
-                out += '_';
-                break;
-            default:
-                out += c;
+        if ((c >= 'a' && c <= 'z') ||
+            (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') ||
+            c == '_' || c == '-') {
+            out += c;
+        } else {
+            out += '_';
         }
     }
+
     return out;
 }
 
 // ===============================
-// 🚨 SolidWorks Unicode修复 (\X2\)
+// STEP Unicode修复（SW专用）
 // ===============================
-string fixSWUnicode(string line) {
+string fixUnicode(string line) {
 
-    size_t start = 0;
+    size_t pos;
 
-    while ((start = line.find("\\X2\\")) != string::npos) {
+    while ((pos = line.find("\\X2\\")) != string::npos) {
 
-        size_t end = line.find("\\X0\\", start);
+        size_t end = line.find("\\X0\\", pos);
 
         if (end == string::npos) break;
 
-        // 👉 提取中间内容
-        string block = line.substr(start, end - start + 4);
+        line.replace(pos, end - pos + 4, "Part");
 
-        // 👉 简化处理（工程安全策略）
-        line.replace(start, end - start + 4, "中文零件");
-
-        start += 6;
     }
 
     return line;
 }
 
 // ===============================
-// 🚨 提取 STEP 名称（简单安全版）
+// 提取STEP名称
 // ===============================
-string extractName(string line) {
+string extractName(const string& line) {
 
     size_t p = line.find("'");
 
@@ -87,57 +72,60 @@ string extractName(string line) {
 }
 
 // ===============================
-// 🚨 替换 STEP 名称
+// 替换STEP字段（核心）
 // ===============================
-string replaceName(string line, const string& newName) {
+string buildTripleName(const string& id) {
 
-    size_t p = line.find("'");
+    string ascii = toASCII(id);
 
-    if (p == string::npos) return line;
+    string chinese = id;
 
-    size_t q = line.find("'", p + 1);
+    if (chineseMap.count(id)) {
+        chinese = chineseMap[id];
+    }
 
-    if (q == string::npos) return line;
-
-    line.replace(p + 1, q - p - 1, newName);
-
-    return line;
+    return ascii + "|" + chinese;
 }
 
 // ===============================
-// 🚀 核心修复逻辑
+// 替换逻辑
 // ===============================
 string fixLine(string line) {
 
-    // ① SW Unicode修复
-    line = fixSWUnicode(line);
+    line = fixUnicode(line);
 
-    // ② 提取旧名字
     string name = extractName(line);
 
     if (!name.empty()) {
 
-        // ③ 映射中文
-        string newName = name;
+        string ascii = toASCII(name);
+        string chinese = name;
 
-        if (nameMap.count(name)) {
-            newName = nameMap[name];
+        if (chineseMap.count(name))
+            chinese = chineseMap[name];
+
+        // 安全字符
+        for (char &c : chinese) {
+            if (c == '\'' || c == '"' || c == '\\')
+                c = '_';
         }
 
-        // ④ 安全字符过滤
-        newName = sanitize(newName);
+        // ⚠️ 关键：写回 ASCII（保证SW）
+        size_t p = line.find("'");
 
-        // ⑤ 替换回 STEP
-        line = replaceName(line, newName);
+        if (p != string::npos) {
+            size_t q = line.find("'", p + 1);
+            if (q != string::npos) {
+                line.replace(p + 1, q - p - 1, ascii);
+            }
+        }
     }
 
     return line;
 }
 
 // ===============================
-// 🚀 输入文件自动识别
-// ===============================
-string findInputFile() {
+string findInput() {
 
     ifstream f1("input");
     if (f1.good()) return "input";
@@ -152,31 +140,17 @@ string findInputFile() {
 }
 
 // ===============================
-// 🚀 MAIN
-// ===============================
 int main() {
 
-    string file = findInputFile();
+    string file = findInput();
 
     if (file.empty()) {
-        cout << "❌ 未找到 STEP 文件 (input / input.step / input.stp)" << endl;
+        cout << "❌ 未找到STEP文件" << endl;
         return 1;
     }
 
     ifstream in(file);
-
-    if (!in.is_open()) {
-        cout << "❌ 文件打开失败" << endl;
-        return 1;
-    }
-
-    string outputFile = "input_fixed.step";
-    ofstream out(outputFile);
-
-    if (!out.is_open()) {
-        cout << "❌ 输出文件创建失败" << endl;
-        return 1;
-    }
+    ofstream out("input_fixed.step");
 
     string line;
 
@@ -187,7 +161,7 @@ int main() {
     in.close();
     out.close();
 
-    cout << "🚀 完成：STEP修复成功 -> " << outputFile << endl;
+    cout << "✅ STEP双CAD兼容V2完成" << endl;
 
     return 0;
 }
